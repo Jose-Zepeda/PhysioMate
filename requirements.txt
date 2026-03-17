@@ -1,0 +1,6 @@
+opencv-python>=4.8
+mediapipe>=0.10
+numpy>=1.24
+customtkinter>=5.2
+pyttsx3>=2.90
+Pillow>=10.0

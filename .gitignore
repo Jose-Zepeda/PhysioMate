@@ -1,0 +1,35 @@
+# ─── Entornos virtuales ───
+venv/
+env/
+.env/
+.venv/
+
+# ─── Python cache ───
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+
+# ─── Distribución / Build ───
+dist/
+build/
+*.egg-info/
+*.egg
+
+# ─── IDEs ───
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ─── OS ───
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ─── MediaPipe / ML models cache ───
+*.tflite
+
+# ─── Logs ───
+*.log
