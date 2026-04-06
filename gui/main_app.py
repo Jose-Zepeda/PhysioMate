@@ -9,6 +9,7 @@ y controles, y manejo completo del ciclo de vida de la cámara.
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from typing import Optional
 
@@ -76,6 +77,9 @@ class MainApp(ctk.CTk):
         self._build_layout()
         self._build_sidebar()
         self._build_video_area()
+        
+        # Cargar el placeholder inicial después de que la interfaz se dibuje
+        self.after(100, self._update_placeholder_image)
 
     # ──────────────────────────────────────────────
     #  Construcción de la Interfaz
@@ -383,14 +387,8 @@ class MainApp(ctk.CTk):
         self._start_btn.configure(state="normal")
         self._stop_btn.configure(state="disabled")
 
-        # Restablecer video label
-        self._video_label.configure(
-            image=None,
-            text="Cámara detenida. Presiona ▶ para reanudar.",
-        )
-        self._current_image = None
-
         logger.info("Cámara detenida")
+        self._update_placeholder_image()
 
     def _on_reset(self) -> None:
         """Reinicia los contadores del ejercicio actual."""
@@ -407,6 +405,55 @@ class MainApp(ctk.CTk):
         self.tracker.reset_exercise()
         self._update_metrics_display(None)
         logger.info("Ejercicio cambiado a: %s", exercise_name)
+        self._update_placeholder_image()
+
+    def _update_placeholder_image(self) -> None:
+        """Actualiza la imagen placeholder según el ejercicio seleccionado."""
+        if self._is_running:
+            return  # No interrumpir si la cámara está activa
+
+        exercise_name = self._exercise_var.get()
+        image_path = os.path.join("assets", f"{exercise_name}.png")
+        
+        try:
+            if os.path.exists(image_path):
+                self._video_frame.update_idletasks()
+                video_width = self._video_frame.winfo_width() - 10
+                video_height = self._video_frame.winfo_height() - 10
+                
+                if video_width <= 0 or video_height <= 0:
+                    video_width, video_height = 800, 600
+
+                # Cargar imagen y mantener relación de aspecto aproximada
+                pil_image = Image.open(image_path)
+                
+                # Por simplicidad en placeholder usamos CTkImage directamente
+                # ajustado al tamaño de la ventana
+                ctk_image = ctk.CTkImage(
+                    light_image=pil_image,
+                    dark_image=pil_image,
+                    size=(video_width, video_height),
+                )
+                
+                self._video_label.configure(
+                    image=ctk_image,
+                    text="", # Ocultar texto si hay imagen
+                )
+                self._current_image = ctk_image
+            else:
+                self._clear_video_label()
+        except Exception as e:
+            logger.error(f"Error al cargar imagen del ejercicio {exercise_name}: %s", e)
+            self._clear_video_label()
+
+    def _clear_video_label(self) -> None:
+        """Muestra el estado vacío sin imagen."""
+        empty_img = ctk.CTkImage(Image.new("RGBA", (1, 1), (0, 0, 0, 0)))
+        self._video_label.configure(
+            image=empty_img,
+            text="Cámara detenida. Presiona ▶ para reanudar.",
+        )
+        self._current_image = empty_img
 
     def _on_audio_toggle(self) -> None:
         """Activa/desactiva el feedback de audio."""
@@ -532,7 +579,12 @@ class MainApp(ctk.CTk):
         )
 
         # Forma
-        if result.form_ok:
+        if not result.state or "detectado" in result.state.lower() or "esperando" in result.state.lower() or "visible" in result.state.lower():
+            self._form_indicator.configure(
+                text="● ESPERANDO",
+                text_color="#AAAAAA",
+            )
+        elif result.form_ok:
             self._form_indicator.configure(
                 text="● CORRECTA",
                 text_color="#00ff88",

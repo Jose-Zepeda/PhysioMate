@@ -173,9 +173,10 @@ class BicepCurlExercise(ExerciseBase):
 
         if angle > self.ANGLE_DOWN_THRESHOLD:
             new_state = "Abajo"
-            if self._state == "Arriba" and self._form_ok:
+            if self._direction == "bajando" and self._form_ok:
                 # Transición completa: contar repetición
                 self._rep_count += 1
+                self._direction = ""
             if not feedback:
                 feedback = "Sube el brazo"
         elif angle < self.ANGLE_UP_THRESHOLD:

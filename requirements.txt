@@ -1,5 +1,5 @@
-opencv-python>=4.8
-mediapipe>=0.10
+opencv-python>=4.8,<4.12
+mediapipe>=0.10,<0.10.22
 numpy>=1.24
 customtkinter>=5.2
 pyttsx3>=2.90
