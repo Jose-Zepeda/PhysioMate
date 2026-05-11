@@ -133,13 +133,20 @@ class ExerciseTracker:
 
             # 5. Producir feedback de audio
             if exercise_result and exercise_result.feedback_message:
-                # Solo hablar si la postura está mal para no saturar al usuario
-                if not exercise_result.form_ok:
+                state_lower = exercise_result.state.lower()
+                is_positioning_msg = (
+                    "no detectado" in state_lower
+                    or "no visible" in state_lower
+                    or "esperando" in state_lower
+                    or "piernas" in state_lower
+                )
+                # Hablar si la postura está mal O si se necesita reposicionarse
+                if not exercise_result.form_ok or is_positioning_msg:
                     self.audio.speak(exercise_result.feedback_message)
-                # O si completó una repetición (opcional, pero ayuda a la experiencia)
+                # Anunciar el número de reps al completar una
                 elif self._last_rep_count is not None and exercise_result.rep_count > self._last_rep_count:
                     self.audio.speak(str(exercise_result.rep_count))
-            
+
             self._last_rep_count = exercise_result.rep_count if exercise_result else 0
 
         else:
@@ -150,81 +157,97 @@ class ExerciseTracker:
 
         return annotated_frame, exercise_result
 
+    @staticmethod
+    def _ascii(text: str) -> str:
+        """Elimina tildes y caracteres especiales que OpenCV no puede renderizar."""
+        replacements = {
+            "á": "a", "é": "e", "í": "i", "ó": "o", "ú": "u",
+            "Á": "A", "É": "E", "Í": "I", "Ó": "O", "Ú": "U",
+            "ü": "u", "Ü": "U", "ñ": "n", "Ñ": "N",
+            "¡": "!", "¿": "?",
+        }
+        for orig, rep in replacements.items():
+            text = text.replace(orig, rep)
+        return text
+
+    @staticmethod
+    def _wrap_text(text: str, max_chars: int = 28) -> list:
+        """Parte un texto largo en líneas de max_chars caracteres."""
+        words = text.split()
+        lines = []
+        current = ""
+        for word in words:
+            if len(current) + len(word) + 1 <= max_chars:
+                current = (current + " " + word).strip()
+            else:
+                if current:
+                    lines.append(current)
+                current = word
+        if current:
+            lines.append(current)
+        return lines
+
     def _draw_exercise_info(
         self,
         frame: np.ndarray,
         result: ExerciseResult,
     ) -> np.ndarray:
-        """Dibuja información del ejercicio superpuesta en el frame.
-
-        Incluye ángulo actual, estado, contador de repeticiones
-        y mensaje de feedback.
-
-        Args:
-            frame: Frame donde dibujar.
-            result: Resultado de la evaluación del ejercicio.
-
-        Returns:
-            Frame con la información dibujada.
-        """
+        """Dibuja información del ejercicio superpuesta en el frame."""
         h, w, _ = frame.shape
 
-        # ── Fondo semitransparente para info ──
-        rect_x = w - 380 if w > 400 else 10
-        text_x = rect_x + 10
+        # Parámetros de diseño del panel — siempre en la esquina superior izquierda
+        PANEL_X = 10
+        PANEL_W = 300
+        FONT = cv2.FONT_HERSHEY_SIMPLEX
+        FONT_SM = 0.58
+        FONT_MD = 0.68
+        THICK = 2
+        LINE_H = 32  # altura entre líneas
 
+        # Calcular cuántas líneas necesita el feedback
+        feedback_lines = self._wrap_text(self._ascii(result.feedback_message)) if result.feedback_message else []
+        panel_h = 115 + max(len(feedback_lines), 1) * LINE_H
+
+        # Fondo semitransparente
         overlay = frame.copy()
-        cv2.rectangle(overlay, (rect_x, 10), (rect_x + 360, 150), (30, 30, 30), -1)
-        cv2.addWeighted(overlay, 0.7, frame, 0.3, 0, frame)
+        cv2.rectangle(overlay, (PANEL_X, 8), (PANEL_X + PANEL_W, panel_h), (20, 20, 20), -1)
+        cv2.addWeighted(overlay, 0.72, frame, 0.28, 0, frame)
+
+        # Borde del panel
+        cv2.rectangle(frame, (PANEL_X, 8), (PANEL_X + PANEL_W, panel_h), (80, 80, 80), 1)
+
+        tx = PANEL_X + 10
+        y = 38
 
         # ── Ángulo ──
-        cv2.putText(
-            frame,
-            f"Angulo: {result.angle:.1f} grados",
-            (text_x, 40),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.7,
-            (255, 255, 255),
-            2,
-        )
+        cv2.putText(frame, f"Angulo: {result.angle:.1f} grados", (tx, y),
+                    FONT, FONT_MD, (255, 255, 255), THICK)
+        y += LINE_H
 
         # ── Estado ──
-        state_color = result.color_bgr
-        cv2.putText(
-            frame,
-            f"Estado: {result.state}",
-            (text_x, 70),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.7,
-            state_color,
-            2,
-        )
+        state_text = self._ascii(f"Estado: {result.state}")
+        cv2.putText(frame, state_text, (tx, y),
+                    FONT, FONT_MD, result.color_bgr, THICK)
+        y += LINE_H
 
         # ── Repeticiones ──
-        cv2.putText(
-            frame,
-            f"Reps: {result.rep_count}",
-            (text_x, 100),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.8,
-            (0, 255, 255),
-            2,
-        )
+        cv2.putText(frame, f"Reps: {result.rep_count}", (tx, y),
+                    FONT, FONT_MD, (0, 255, 255), THICK)
+        y += LINE_H
 
-        # ── Feedback ──
-        if result.feedback_message:
-            feedback_color = (0, 200, 0) if result.form_ok else (0, 0, 255)
-            # Limpiar caracteres especiales que el modelo OpenCV no dibuja bien
-            clean_msg = result.feedback_message.replace("á", "a").replace("é", "e").replace("í", "i").replace("ó", "o").replace("ú", "u")
-            cv2.putText(
-                frame,
-                clean_msg,
-                (text_x, 135),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.6,
-                feedback_color,
-                2,
-            )
+        # ── Separador ──
+        cv2.line(frame, (tx, y - 8), (PANEL_X + PANEL_W - 10, y - 8), (80, 80, 80), 1)
+
+        # ── Feedback (multi-línea) ──
+        if feedback_lines:
+            fb_color = (0, 200, 0) if result.form_ok else (50, 50, 255)
+            # Si es mensaje de posición/warning usar naranja
+            state_lower = result.state.lower()
+            if "no detectado" in state_lower or "visible" in state_lower or "esperando" in state_lower:
+                fb_color = (0, 165, 255)  # naranja
+            for line in feedback_lines:
+                cv2.putText(frame, line, (tx, y), FONT, FONT_SM, fb_color, THICK)
+                y += LINE_H
 
         return frame
 

@@ -52,7 +52,7 @@ class HighKneesExercise(ExerciseBase):
 
     def evaluate(self, landmarks: Any, frame_shape: Tuple[int, int, int]) -> ExerciseResult:
         if landmarks is None:
-            return ExerciseResult(state="No detectado", feedback_message="Apunta hacia tu cadera", color_bgr=COLOR_WARNING)
+            return ExerciseResult(state="No detectado", feedback_message="Coloca la camara apuntando hacia tu cintura y piernas", color_bgr=COLOR_WARNING)
 
         lm = landmarks.landmark
         h, w, _ = frame_shape
@@ -66,7 +66,7 @@ class HighKneesExercise(ExerciseBase):
         r_knee = lm[_RIGHT_KNEE]
 
         if l_hip.visibility < self.VISIBILITY_THRESHOLD or r_hip.visibility < self.VISIBILITY_THRESHOLD:
-            return ExerciseResult(state="Piernas no visibles", feedback_message="Acomoda la cámara", color_bgr=COLOR_WARNING)
+            return ExerciseResult(state="Piernas no visibles", feedback_message="Alejate de la camara para que se vean tu cadera y tus rodillas", color_bgr=COLOR_WARNING)
 
         # Evaluar ángulo hombro -> cadera -> rodilla para ambas piernas
         l_sh_pt = (l_sh.x*w, l_sh.y*h); l_hip_pt = (l_hip.x*w, l_hip.y*h); l_knee_pt = (l_knee.x*w, l_knee.y*h)

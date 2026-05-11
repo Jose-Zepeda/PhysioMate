@@ -48,7 +48,7 @@ class SideBendsExercise(ExerciseBase):
 
     def evaluate(self, landmarks: Any, frame_shape: Tuple[int, int, int]) -> ExerciseResult:
         if landmarks is None:
-            return ExerciseResult(state="No detectado", feedback_message="Colócate frente a la cámara", color_bgr=COLOR_WARNING)
+            return ExerciseResult(state="No detectado", feedback_message="Coloca la camara al frente para que se vea tu torso completo", color_bgr=COLOR_WARNING)
 
         lm = landmarks.landmark
         h, w, _ = frame_shape
@@ -57,7 +57,7 @@ class SideBendsExercise(ExerciseBase):
         l_hip = lm[_LEFT_HIP]; r_hip = lm[_RIGHT_HIP]
 
         if l_sh.visibility < self.VISIBILITY_THRESHOLD or l_hip.visibility < self.VISIBILITY_THRESHOLD:
-            return ExerciseResult(state="No visible", feedback_message="Torso no visible", color_bgr=COLOR_WARNING)
+            return ExerciseResult(state="No visible", feedback_message="Se necesita ver tus hombros y cadera, centra la camara en tu torso", color_bgr=COLOR_WARNING)
 
         # Calcular el punto medio de los hombros y de las caderas
         sh_mid = ((l_sh.x + r_sh.x) / 2 * w, (l_sh.y + r_sh.y) / 2 * h)

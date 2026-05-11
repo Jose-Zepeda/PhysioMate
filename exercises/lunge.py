@@ -50,7 +50,7 @@ class LungeExercise(ExerciseBase):
 
     def evaluate(self, landmarks: Any, frame_shape: Tuple[int, int, int]) -> ExerciseResult:
         if landmarks is None:
-            return ExerciseResult(state="No detectado", feedback_message="Ponte de perfil", color_bgr=COLOR_WARNING)
+            return ExerciseResult(state="No detectado", feedback_message="Coloca tu cuerpo de perfil frente a la camara para comenzar", color_bgr=COLOR_WARNING)
 
         lm = landmarks.landmark
         h, w, _ = frame_shape
@@ -61,7 +61,7 @@ class LungeExercise(ExerciseBase):
         right_knee = lm[_RIGHT_KNEE].visibility
         
         if max(left_knee, right_knee) < self.VISIBILITY_THRESHOLD:
-            return ExerciseResult(state="Piernas no visibles", feedback_message="Aléjate un poco", color_bgr=COLOR_WARNING)
+            return ExerciseResult(state="Piernas no visibles", feedback_message="Alejate de la camara para que se vean tus dos piernas completas", color_bgr=COLOR_WARNING)
 
         # Detectar pierna que está más flexionada y soporta peso (la que marca el paso)
         l_hip_pt = (lm[_LEFT_HIP].x * w, lm[_LEFT_HIP].y * h)

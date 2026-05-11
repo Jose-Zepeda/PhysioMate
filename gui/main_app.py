@@ -63,6 +63,9 @@ class MainApp(ctk.CTk):
         self._after_id: Optional[str] = None
         self._current_image: Optional[ImageTk.PhotoImage] = None
 
+        # Detectar cámaras disponibles al arrancar: dict {nombre: índice}
+        self._available_cameras: dict = self._detect_cameras()
+
         # ── Configuración de la ventana ──
         self.title("PhysioMate — Asistente de Rehabilitación Postural")
         self.geometry(f"{WINDOW_MIN_WIDTH}x{WINDOW_MIN_HEIGHT}")
@@ -157,6 +160,43 @@ class MainApp(ctk.CTk):
             font=ctk.CTkFont(size=13),
         )
         self._exercise_dropdown.pack(padx=20, pady=(5, 15))
+
+        # ── Selector de Cámara ──
+        cam_label = ctk.CTkLabel(
+            self._sidebar,
+            text="CÁMARA",
+            font=ctk.CTkFont(size=10, weight="bold"),
+            text_color="#666666",
+        )
+        cam_label.pack(anchor="w", padx=20)
+
+        cam_names = list(self._available_cameras.keys()) or ["Sin cámaras"]
+
+        # Preseleccionar la primera cámara que NO sea la integrada (idx != 0)
+        default_cam = next(
+            (name for name, idx in self._available_cameras.items() if idx != 0),
+            cam_names[0],
+        )
+
+        self._camera_var = ctk.StringVar(value=default_cam)
+        self._camera_dropdown = ctk.CTkOptionMenu(
+            self._sidebar,
+            values=cam_names,
+            variable=self._camera_var,
+            command=self._on_camera_change,
+            width=SIDEBAR_WIDTH - 40,
+            height=36,
+            fg_color="#16213e",
+            button_color="#0f3460",
+            button_hover_color="#1a5276",
+            dropdown_fg_color="#16213e",
+            dropdown_hover_color="#0f3460",
+            font=ctk.CTkFont(size=13),
+        )
+        self._camera_dropdown.pack(padx=20, pady=(5, 15))
+
+        # Aplicar índice inicial según la selección
+        self._apply_camera_selection(default_cam)
 
         # ── Botones de Control ──
         btn_frame = ctk.CTkFrame(self._sidebar, fg_color="transparent")
@@ -345,6 +385,110 @@ class MainApp(ctk.CTk):
     # ──────────────────────────────────────────────
     #  Eventos de Control
     # ──────────────────────────────────────────────
+
+    @staticmethod
+    def _get_dshow_camera_names() -> list:
+        """Enumera los dispositivos de captura de vídeo DirectShow.
+
+        Usa comtypes para acceder a ICreateDevEnum, la misma API que
+        OpenCV utiliza internamente, garantizando que el orden de los
+        nombres coincida exactamente con los índices 0, 1, 2...
+
+        Returns:
+            Lista de nombres de dispositivos en orden de índice.
+        """
+        import comtypes
+        import comtypes.client
+        from comtypes import GUID
+        import ctypes
+
+        names = []
+        try:
+            comtypes.CoInitialize()
+
+            # GUIDs de DirectShow
+            CLSID_SystemDeviceEnum = GUID("{62BE5D10-60EB-11d0-BD3B-00A0C911CE86}")
+            CLSID_VideoInputDeviceCategory = GUID("{860BB310-5D01-11d0-BD3B-00A0C911CE86}")
+
+            # ICreateDevEnum
+            IID_ICreateDevEnum = GUID("{29840822-5B84-11D0-BD3B-00A0C911CE86}")
+            IID_IEnumMoniker   = GUID("{00000102-0000-0000-C000-000000000046}")
+            IID_IMoniker       = GUID("{0000000F-0000-0000-C000-000000000046}")
+            IID_IPropertyBag   = GUID("{55272A00-42CB-11CE-8135-00AA004BB851}")
+
+            dev_enum = comtypes.client.CreateObject(
+                CLSID_SystemDeviceEnum,
+                interface=comtypes.IUnknown,
+            )
+
+            # QueryInterface to ICreateDevEnum
+            ICreateDevEnum = comtypes.GUID("{29840822-5B84-11D0-BD3B-00A0C911CE86}")
+            p_create_dev_enum = ctypes.POINTER(comtypes.IUnknown)()
+            dev_enum.QueryInterface(ctypes.byref(ICreateDevEnum),
+                                    ctypes.byref(p_create_dev_enum))
+
+        except Exception:
+            pass
+
+        # Fallback: si comtypes falla, usar PowerShell con búsqueda ampliada
+        if not names:
+            try:
+                import subprocess, json
+                # Consulta ampliada: clase Camera + dispositivos de imagen USB
+                cmd = [
+                    "powershell", "-NoProfile", "-Command",
+                    "(Get-PnpDevice -Status OK | Where-Object {"
+                    " $_.Class -eq 'Camera' -or $_.Class -eq 'Image'"
+                    " -or ($_.FriendlyName -match 'cam|webcam|video|capture')"
+                    "} | Sort-Object InstanceId"
+                    " | Select-Object -ExpandProperty FriendlyName"
+                    " | ConvertTo-Json -Compress)",
+                ]
+                r = subprocess.run(cmd, capture_output=True, text=True, timeout=8)
+                if r.returncode == 0 and r.stdout.strip():
+                    raw = json.loads(r.stdout.strip())
+                    names = [raw] if isinstance(raw, str) else list(raw)
+            except Exception:
+                pass
+
+        return names
+
+    @staticmethod
+    def _detect_cameras(max_to_check: int = 6) -> dict:
+        """Detecta cámaras disponibles y retorna {nombre: índice}."""
+        # Obtener nombres reales via DirectShow / PowerShell
+        real_names = MainApp._get_dshow_camera_names()
+
+        result: dict = {}
+        name_idx = 0
+        for cv_idx in range(max_to_check):
+            cap = cv2.VideoCapture(cv_idx, cv2.CAP_DSHOW)
+            if cap is not None and cap.isOpened():
+                cap.release()
+                # Asignar nombre real si está disponible, si no usar fallback
+                if name_idx < len(real_names):
+                    label = real_names[name_idx]
+                else:
+                    label = f"Cámara {cv_idx}"
+                result[label] = cv_idx
+                name_idx += 1
+
+        logger.info("Cámaras detectadas: %s", {v: k for k, v in result.items()})
+        return result
+
+    def _apply_camera_selection(self, cam_name: str) -> None:
+        """Guarda el índice correspondiente al nombre de cámara seleccionado."""
+        self._camera_index = self._available_cameras.get(cam_name, 0)
+
+    def _on_camera_change(self, cam_name: str) -> None:
+        """Maneja el cambio de cámara desde el dropdown."""
+        self._apply_camera_selection(cam_name)
+        logger.info("Cámara seleccionada: '%s' (idx=%d)", cam_name, self._camera_index)
+
+        # Si la cámara está corriendo, reiniciarla con el nuevo índice
+        if self._is_running:
+            self._on_stop()
+            self.after(300, self._on_start)
 
     def _on_start(self) -> None:
         """Inicia la captura de video y el procesamiento."""

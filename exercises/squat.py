@@ -54,7 +54,7 @@ class SquatExercise(ExerciseBase):
 
     def evaluate(self, landmarks: Any, frame_shape: Tuple[int, int, int]) -> ExerciseResult:
         if landmarks is None:
-            return ExerciseResult(state="No detectado", feedback_message="Cuerpo completo en cámara", color_bgr=COLOR_WARNING)
+            return ExerciseResult(state="No detectado", feedback_message="Coloca tu cuerpo completo frente a la camara y alejate un poco", color_bgr=COLOR_WARNING)
 
         lm = landmarks.landmark
         h, w, _ = frame_shape
@@ -76,7 +76,7 @@ class SquatExercise(ExerciseBase):
             shoulder = lm[_RIGHT_SHOULDER]
             landmark_ids = [_RIGHT_HIP, _RIGHT_KNEE, _RIGHT_ANKLE, _RIGHT_SHOULDER]
         else:
-            return ExerciseResult(state="Piernas no visibles", feedback_message="Aleja la cámara", color_bgr=COLOR_WARNING)
+            return ExerciseResult(state="Piernas no visibles", feedback_message="Alejate mas de la camara para que se vean tus rodillas y tobillos", color_bgr=COLOR_WARNING)
 
         hip_pt = (hip.x * w, hip.y * h)
         knee_pt = (knee.x * w, knee.y * h)
