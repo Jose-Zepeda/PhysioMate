@@ -9,22 +9,17 @@ from typing import Any, Tuple
 import mediapipe as mp
 
 from core.math_utils import MathUtils
+from core.config import UIConfig
 from exercises.base import ExerciseBase, ExerciseResult, register_exercise
 
 _mp_pose = mp.solutions.pose.PoseLandmark
 
-_LEFT_HIP = _mp_pose.LEFT_HIP
-_LEFT_KNEE = _mp_pose.LEFT_KNEE
-_LEFT_ANKLE = _mp_pose.LEFT_ANKLE
-_RIGHT_HIP = _mp_pose.RIGHT_HIP
-_RIGHT_KNEE = _mp_pose.RIGHT_KNEE
-_RIGHT_ANKLE = _mp_pose.RIGHT_ANKLE
-_LEFT_SHOULDER = _mp_pose.LEFT_SHOULDER
-_RIGHT_SHOULDER = _mp_pose.RIGHT_SHOULDER
+# ... (sin cambios en las constantes de landmarks) ...
 
-COLOR_OK = (0, 220, 0)
-COLOR_BAD = (0, 0, 220)
-COLOR_WARNING = (0, 165, 255)
+_UI = UIConfig()
+COLOR_OK = _UI.COLOR_OK
+COLOR_BAD = _UI.COLOR_BAD
+COLOR_WARNING = _UI.COLOR_WARNING
 
 @register_exercise
 class SquatExercise(ExerciseBase):

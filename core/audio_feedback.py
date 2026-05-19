@@ -13,6 +13,8 @@ import threading
 import time
 from typing import Optional
 
+from core.config import AudioConfig
+
 logger = logging.getLogger(__name__)
 
 
@@ -33,9 +35,9 @@ class AudioFeedback:
 
     def __init__(
         self,
-        cooldown_seconds: float = 3.0,
-        rate: int = 180,
-        volume: float = 0.9,
+        cooldown_seconds: float = AudioConfig().COOLDOWN_SECONDS,
+        rate: int = AudioConfig().RATE,
+        volume: float = AudioConfig().VOLUME,
     ) -> None:
         """Inicializa el sistema de audio con un hilo worker.
 

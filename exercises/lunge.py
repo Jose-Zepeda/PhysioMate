@@ -9,20 +9,17 @@ from typing import Any, Tuple
 import mediapipe as mp
 
 from core.math_utils import MathUtils
+from core.config import UIConfig
 from exercises.base import ExerciseBase, ExerciseResult, register_exercise
 
 _mp_pose = mp.solutions.pose.PoseLandmark
 
-_LEFT_HIP = _mp_pose.LEFT_HIP
-_LEFT_KNEE = _mp_pose.LEFT_KNEE
-_LEFT_ANKLE = _mp_pose.LEFT_ANKLE
-_RIGHT_HIP = _mp_pose.RIGHT_HIP
-_RIGHT_KNEE = _mp_pose.RIGHT_KNEE
-_RIGHT_ANKLE = _mp_pose.RIGHT_ANKLE
+# ... (constantes de landmarks) ...
 
-COLOR_OK = (0, 220, 0)
-COLOR_BAD = (0, 0, 220)
-COLOR_WARNING = (0, 165, 255)
+_UI = UIConfig()
+COLOR_OK = _UI.COLOR_OK
+COLOR_BAD = _UI.COLOR_BAD
+COLOR_WARNING = _UI.COLOR_WARNING
 
 @register_exercise
 class LungeExercise(ExerciseBase):
@@ -34,6 +31,7 @@ class LungeExercise(ExerciseBase):
         self._rep_count: int = 0
         self._state: str = "Esperando..."
         self._form_ok: bool = True
+        self._direction: str = ""
 
     @property
     def name(self) -> str:
@@ -47,6 +45,7 @@ class LungeExercise(ExerciseBase):
         self._rep_count = 0
         self._state = "Esperando..."
         self._form_ok = True
+        self._direction = ""
 
     def evaluate(self, landmarks: Any, frame_shape: Tuple[int, int, int]) -> ExerciseResult:
         if landmarks is None:
@@ -97,10 +96,6 @@ class LungeExercise(ExerciseBase):
 
         new_state = self._state
         
-        # Track direction internally through simple text parsing or a new variable
-        if not hasattr(self, "_direction"):
-             self._direction = ""
-
         if angle > self.ANGLE_UP_THRESHOLD:
             new_state = "Arriba"
             if self._direction == "subiendo" and self._form_ok:

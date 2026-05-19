@@ -21,15 +21,18 @@ from PIL import Image, ImageTk
 from core.audio_feedback import AudioFeedback
 from core.exercise_tracker import ExerciseTracker
 from core.pose_detector import PoseDetector
+from core.config import UIConfig
+from gui.drawing_utils import DrawingUtils
 from exercises.base import get_available_exercises
 
 logger = logging.getLogger(__name__)
 
+# Configuración global de UI
+_CONFIG = UIConfig()
+
 # ─── Constantes de diseño ───
 SIDEBAR_WIDTH = 280
 VIDEO_UPDATE_INTERVAL_MS = 30  # ~33 FPS
-WINDOW_MIN_WIDTH = 960
-WINDOW_MIN_HEIGHT = 620
 
 
 class MainApp(ctk.CTk):
@@ -67,9 +70,9 @@ class MainApp(ctk.CTk):
         self._available_cameras: dict = self._detect_cameras()
 
         # ── Configuración de la ventana ──
-        self.title("PhysioMate — Asistente de Rehabilitación Postural")
-        self.geometry(f"{WINDOW_MIN_WIDTH}x{WINDOW_MIN_HEIGHT}")
-        self.minsize(WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT)
+        self.title(_CONFIG.WINDOW_TITLE)
+        self.geometry(f"{_CONFIG.MIN_WIDTH}x{_CONFIG.MIN_HEIGHT}")
+        self.minsize(_CONFIG.MIN_WIDTH, _CONFIG.MIN_HEIGHT)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
         # ── Tema ──
@@ -624,14 +627,26 @@ class MainApp(ctk.CTk):
                     # Espejo horizontal para feedback natural
                     frame = cv2.flip(frame, 1)
 
-                    # Procesar frame con el tracker
-                    annotated_frame, result = self.tracker.process_frame(frame)
+                    # 1. Procesar frame con el tracker (Lógica y Evaluación)
+                    frame, results_mp, exercise_result = self.tracker.process_frame(frame)
 
-                    # Convertir BGR → RGB y mostrar
+                    # 2. Dibujar esqueleto (Uso de PoseDetector para visualización)
+                    color = exercise_result.color_bgr if exercise_result else None
+                    annotated_frame = self.tracker.pose_detector.draw_landmarks(
+                        frame, results_mp, color=color
+                    )
+
+                    # 3. Dibujar información del ejercicio (Uso de DrawingUtils)
+                    if exercise_result:
+                        annotated_frame = DrawingUtils.draw_exercise_info(
+                            annotated_frame, exercise_result, _CONFIG
+                        )
+
+                    # 4. Convertir BGR → RGB y mostrar
                     self._display_frame(annotated_frame)
 
-                    # Actualizar métricas en la sidebar
-                    self._update_metrics_display(result)
+                    # 5. Actualizar métricas en la sidebar
+                    self._update_metrics_display(exercise_result)
 
                 else:
                     logger.warning("No se pudo leer frame de la cámara")

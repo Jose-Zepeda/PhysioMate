@@ -14,6 +14,8 @@ import mediapipe as mp
 import numpy as np
 
 
+from core.config import DetectionConfig
+
 class PoseDetector:
     """Detector de pose corporal basado en MediaPipe Pose.
 
@@ -28,9 +30,9 @@ class PoseDetector:
 
     def __init__(
         self,
-        min_detection_confidence: float = 0.5,
-        min_tracking_confidence: float = 0.5,
-        model_complexity: int = 1,
+        min_detection_confidence: float = DetectionConfig().MIN_DETECTION_CONFIDENCE,
+        min_tracking_confidence: float = DetectionConfig().MIN_TRACKING_CONFIDENCE,
+        model_complexity: int = DetectionConfig().MODEL_COMPLEXITY,
     ) -> None:
         """Inicializa el detector de pose con MediaPipe.
 

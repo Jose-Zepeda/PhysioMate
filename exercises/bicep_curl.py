@@ -15,27 +15,19 @@ from typing import Any, Tuple
 import mediapipe as mp
 
 from core.math_utils import MathUtils
+from core.config import UIConfig
 from exercises.base import ExerciseBase, ExerciseResult, register_exercise
 
 # IDs de landmarks de MediaPipe Pose
 _mp_pose = mp.solutions.pose.PoseLandmark
 
-# Landmarks para brazo izquierdo y derecho
-_LEFT_SHOULDER = _mp_pose.LEFT_SHOULDER
-_LEFT_ELBOW = _mp_pose.LEFT_ELBOW
-_LEFT_WRIST = _mp_pose.LEFT_WRIST
-_LEFT_HIP = _mp_pose.LEFT_HIP
+# ... (sin cambios en las constantes de landmarks) ...
 
-_RIGHT_SHOULDER = _mp_pose.RIGHT_SHOULDER
-_RIGHT_ELBOW = _mp_pose.RIGHT_ELBOW
-_RIGHT_WRIST = _mp_pose.RIGHT_WRIST
-_RIGHT_HIP = _mp_pose.RIGHT_HIP
-
-
-# ─── Colores BGR ───
-COLOR_OK = (0, 220, 0)       # Verde
-COLOR_BAD = (0, 0, 220)      # Rojo
-COLOR_WARNING = (0, 165, 255)  # Naranja
+# ─── Colores BGR desde Config ───
+_UI = UIConfig()
+COLOR_OK = _UI.COLOR_OK
+COLOR_BAD = _UI.COLOR_BAD
+COLOR_WARNING = _UI.COLOR_WARNING
 
 
 @register_exercise

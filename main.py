@@ -39,6 +39,10 @@ def main() -> None:
     # ── 1. Importar ejercicios (activa el registro automático) ──
     try:
         import exercises.bicep_curl  # noqa: F401
+        import exercises.squat       # noqa: F401
+        import exercises.lunge       # noqa: F401
+        import exercises.high_knees  # noqa: F401
+        import exercises.side_bends  # noqa: F401
 
         logger.info("Módulos de ejercicios cargados correctamente")
     except ImportError as e:
@@ -49,25 +53,29 @@ def main() -> None:
     from core.audio_feedback import AudioFeedback
     from core.exercise_tracker import ExerciseTracker
     from core.pose_detector import PoseDetector
+    from core.config import DetectionConfig, AudioConfig
     from exercises.base import get_available_exercises
     from gui.main_app import MainApp
 
     logger.info("Ejercicios disponibles: %s", get_available_exercises())
 
     try:
+        det_config = DetectionConfig()
+        aud_config = AudioConfig()
+
         # Motor de Inferencia
         pose_detector = PoseDetector(
-            min_detection_confidence=0.5,
-            min_tracking_confidence=0.5,
-            model_complexity=1,
+            min_detection_confidence=det_config.MIN_DETECTION_CONFIDENCE,
+            min_tracking_confidence=det_config.MIN_TRACKING_CONFIDENCE,
+            model_complexity=det_config.MODEL_COMPLEXITY,
         )
         logger.info("PoseDetector inicializado")
 
         # Sistema de Audio
         audio = AudioFeedback(
-            cooldown_seconds=3.0,
-            rate=180,
-            volume=0.9,
+            cooldown_seconds=aud_config.COOLDOWN_SECONDS,
+            rate=aud_config.RATE,
+            volume=aud_config.VOLUME,
         )
         logger.info("AudioFeedback inicializado")
 
@@ -75,6 +83,7 @@ def main() -> None:
         tracker = ExerciseTracker(
             pose_detector=pose_detector,
             audio=audio,
+            config=det_config,
         )
         logger.info("ExerciseTracker inicializado")
 

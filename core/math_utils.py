@@ -7,6 +7,7 @@ a partir de coordenadas de landmarks corporales.
 
 import numpy as np
 from numpy.typing import ArrayLike
+from typing import Optional
 
 
 class MathUtils:
@@ -76,3 +77,42 @@ class MathUtils:
         a = np.array(point_a, dtype=np.float64)
         b = np.array(point_b, dtype=np.float64)
         return float(np.linalg.norm(a - b))
+
+
+class SmoothingFilter:
+    """Filtro de suavizado basado en Media Móvil Exponencial (EMA).
+
+    Se utiliza para reducir el ruido en los ángulos calculados, evitando
+    saltos bruscos en el conteo de repeticiones y la visualización.
+    """
+
+    def __init__(self, alpha: float = 0.25) -> None:
+        """Inicializa el filtro.
+
+        Args:
+            alpha: Factor de suavizado [0, 1].
+                   Valores bajos = más suavizado, más retardo.
+                   Valores altos = menos suavizado, más reactivo.
+        """
+        self.alpha = alpha
+        self._last_value: Optional[float] = None
+
+    def update(self, value: float) -> float:
+        """Actualiza el filtro con un nuevo valor y retorna el valor suavizado.
+
+        Args:
+            value: Nuevo valor medido.
+
+        Returns:
+            Valor suavizado.
+        """
+        if self._last_value is None:
+            self._last_value = value
+        else:
+            self._last_value = (self.alpha * value) + ((1 - self.alpha) * self._last_value)
+
+        return self._last_value
+
+    def reset(self) -> None:
+        """Reinicia el filtro."""
+        self._last_value = None
