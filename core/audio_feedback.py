@@ -51,31 +51,21 @@ class AudioFeedback:
 
         self._rate = rate
         self._volume = volume
-        self._message_queue: queue.Queue[Optional[str]] = queue.Queue(maxsize=5)
         self._last_messages: dict[str, float] = {}
         self._lock = threading.Lock()
-        self._running = True
+        self._tts_lock = threading.Lock()
 
-        # Hilo daemon para procesar mensajes TTS
-        self._worker_thread = threading.Thread(
-            target=self._worker,
-            daemon=True,
-            name="AudioFeedbackWorker",
-        )
-        self._worker_thread.start()
-
-    def _init_engine(self):
-        """Inicializa el motor pyttsx3 dentro del hilo worker.
-
-        pyttsx3 requiere que el motor se cree en el mismo hilo
-        donde se ejecuta runAndWait().
-
-        Returns:
-            Motor pyttsx3 inicializado o None si falla.
-        """
+    def _run_tts(self, message: str) -> None:
+        """Función interna que ejecuta pyttsx3 en un hilo nuevo. Evita superposición."""
+        if not self._tts_lock.acquire(blocking=False):
+            return  # Si ya está hablando, ignoramos este mensaje para no solapar audios
+            
         try:
+            import pythoncom
+            pythoncom.CoInitialize()
             import pyttsx3
-
+            
+            logger.info("TTS Hablando: %s", message)
             engine = pyttsx3.init()
             engine.setProperty("rate", self._rate)
             engine.setProperty("volume", self._volume)
@@ -87,49 +77,25 @@ class AudioFeedback:
                     engine.setProperty("voice", voice.id)
                     break
 
-            return engine
+            engine.say(message)
+            engine.runAndWait()
+            logger.info("TTS Completado")
         except Exception as e:
-            logger.error("No se pudo inicializar pyttsx3: %s", e)
-            return None
+            logger.warning("Error al reproducir TTS: %s", e)
+        finally:
+            self._tts_lock.release()
 
-    def _worker(self) -> None:
-        """Hilo worker que procesa la cola de mensajes TTS.
-
-        Se ejecuta como daemon thread y se detiene cuando _running es False
-        o cuando recibe None en la cola.
-        """
-        engine = self._init_engine()
-
-        while self._running:
-            try:
-                message = self._message_queue.get(timeout=0.5)
-
-                if message is None:
-                    # Señal de parada
-                    break
-
-                if engine is not None:
-                    try:
-                        engine.say(message)
-                        engine.runAndWait()
-                    except Exception as e:
-                        logger.warning("Error al reproducir TTS: %s", e)
-                        # Reintentar con nuevo motor
-                        engine = self._init_engine()
-
-                self._message_queue.task_done()
-
-            except queue.Empty:
-                continue
-            except Exception as e:
-                logger.error("Error en worker de audio: %s", e)
-
-        # Limpiar el motor al salir
-        if engine is not None:
-            try:
-                engine.stop()
-            except Exception:
-                pass
+    @staticmethod
+    def _sanitize(text: str) -> str:
+        """Elimina tildes para evitar que pyttsx3 se salte el texto silenciosamente en Windows."""
+        replacements = {
+            "á": "a", "é": "e", "í": "i", "ó": "o", "ú": "u",
+            "Á": "A", "É": "E", "Í": "I", "Ó": "O", "Ú": "U",
+            "ü": "u", "Ü": "U", "ñ": "n", "Ñ": "N"
+        }
+        for orig, rep in replacements.items():
+            text = text.replace(orig, rep)
+        return text
 
     def speak(self, message: str) -> None:
         """Encola un mensaje para ser hablado.
@@ -143,6 +109,8 @@ class AudioFeedback:
         if not self.enabled or not message:
             return
 
+        message = self._sanitize(message)
+
         current_time = time.time()
 
         with self._lock:
@@ -153,26 +121,14 @@ class AudioFeedback:
 
             self._last_messages[message] = current_time
 
-        # Encolar sin bloquear (descarta si la cola está llena)
-        try:
-            self._message_queue.put_nowait(message)
-        except queue.Full:
-            pass
+        # Ejecutar en un hilo completamente nuevo para evitar bugs de COM de pyttsx3
+        t = threading.Thread(target=self._run_tts, args=(message,), daemon=True)
+        t.start()
 
     def stop(self) -> None:
-        """Detiene el sistema de audio y libera recursos."""
-        self._running = False
-
-        # Enviar señal de parada
-        try:
-            self._message_queue.put_nowait(None)
-        except queue.Full:
-            pass
-
-        # Esperar a que el hilo termine (con timeout)
-        if self._worker_thread.is_alive():
-            self._worker_thread.join(timeout=2.0)
+        """Detiene el sistema de audio (ahora no hace nada ya que los hilos son efímeros)."""
+        pass
 
     def __del__(self) -> None:
-        """Destructor: detiene el worker al ser recolectado."""
-        self.stop()
+        """Destructor."""
+        pass

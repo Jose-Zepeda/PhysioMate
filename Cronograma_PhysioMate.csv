@@ -1,0 +1,10 @@
+﻿Fase;Mes;Actividades;Hito / Entregable
+1. Investigacion y Diseno;Febrero;Definicion de requisitos funcionales. Exploracion de tecnologias base (OpenCV, MediaPipe).;Documento de requerimientos
+1. Investigacion y Diseno;Marzo;Diseno de arquitectura. Pruebas concepto de deteccion de esqueleto (Pose Estimation).;Prototipo de rastreo en consola
+2. Desarrollo del Motor Core;Abril;Desarrollo de formulas matematicas para calculo de angulos. Implementacion de logica de Sentadillas.;Motor de tracking funcional
+2. Desarrollo del Motor Core;Mayo;Construccion de la Interfaz Grafica (GUI) responsiva usando CustomTkinter. Enlace de camara a la UI.;Interfaz base integrada
+3. Funciones Avanzadas;Junio;Integracion del sistema TTS (Text-to-Speech) asincrono para retroalimentacion de voz en vivo.;Feedback auditivo funcional
+3. Funciones Avanzadas;Julio;Expancion de rutinas: Zancadas, Curl de Biceps, Inclinacion Lateral y Elevacion de Rodillas.;Soporte multiejercicio
+4. Modos Extra y Optimizacion;Agosto;Desarrollo del modo de analisis de videos pregrabados con barra de progreso interactiva (seek).;Modulo de video completado
+4. Modos Extra y Optimizacion;Septiembre;Resolucion de bugs de paralelismo, refinamiento de umbrales biomecanicos y mejoras de rendimiento.;Version candidata (Release Candidate)
+5. Cierre y Presentacion;Octubre;Pruebas finales de usuario, limpieza de codigo, manual de uso y elaboracion de la presentacion final.;Proyecto finalizado (Version 1.0)

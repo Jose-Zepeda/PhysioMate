@@ -11,6 +11,8 @@ from __future__ import annotations
 import logging
 import os
 import sys
+import threading
+from tkinter import filedialog
 from typing import Optional
 
 import cv2
@@ -33,6 +35,9 @@ _CONFIG = UIConfig()
 # ─── Constantes de diseño ───
 SIDEBAR_WIDTH = 280
 VIDEO_UPDATE_INTERVAL_MS = 30  # ~33 FPS
+
+# Velocidades de reproducción de video
+SPEED_OPTIONS = {"0.25x": 0.25, "0.5x": 0.5, "1x": 1.0, "1.5x": 1.5, "2x": 2.0}
 
 
 class MainApp(ctk.CTk):
@@ -66,6 +71,16 @@ class MainApp(ctk.CTk):
         self._after_id: Optional[str] = None
         self._current_image: Optional[ImageTk.PhotoImage] = None
 
+        # ── Estado modo video pregrabado ──
+        self._video_mode: bool = False          # True = analizando archivo, False = cámara
+        self._video_path: Optional[str] = None  # Ruta del archivo seleccionado
+        self._video_paused: bool = False        # Pausa del video
+        self._video_total_frames: int = 0       # Total de frames del video
+        self._video_current_frame: int = 0      # Frame actual
+        self._video_fps: float = 30.0           # FPS original del video
+        self._playback_speed: float = 1.0       # Factor de velocidad
+        self._user_seeking: bool = False        # True mientras el usuario arrastra el slider
+
         # Detectar cámaras disponibles al arrancar: dict {nombre: índice}
         self._available_cameras: dict = self._detect_cameras()
 
@@ -83,7 +98,7 @@ class MainApp(ctk.CTk):
         self._build_layout()
         self._build_sidebar()
         self._build_video_area()
-        
+
         # Cargar el placeholder inicial después de que la interfaz se dibuje
         self.after(100, self._update_placeholder_image)
 
@@ -98,7 +113,12 @@ class MainApp(ctk.CTk):
         self.grid_rowconfigure(0, weight=1)
 
     def _build_sidebar(self) -> None:
-        """Construye el panel lateral con controles y métricas."""
+        """Construye el panel lateral con controles y métricas.
+
+        El sidebar usa un CTkScrollableFrame interno para que todo el
+        contenido sea accesible sin maximizar la ventana.
+        """
+        # ── Contenedor externo fijo (sin scroll) ──
         self._sidebar = ctk.CTkFrame(
             self,
             width=SIDEBAR_WIDTH,
@@ -107,13 +127,24 @@ class MainApp(ctk.CTk):
         )
         self._sidebar.grid(row=0, column=0, sticky="nsew")
         self._sidebar.grid_propagate(False)
+        self._sidebar.grid_rowconfigure(0, weight=1)
+        self._sidebar.grid_columnconfigure(0, weight=1)
 
-        # ── Logo / Título ──
-        logo_frame = ctk.CTkFrame(
+        # ── Área scrollable interna ──
+        self._scroll = ctk.CTkScrollableFrame(
             self._sidebar,
             fg_color="transparent",
+            scrollbar_button_color="#2a2a4a",
+            scrollbar_button_hover_color="#3a3a6a",
+            corner_radius=0,
         )
-        logo_frame.pack(fill="x", padx=15, pady=(20, 5))
+        self._scroll.grid(row=0, column=0, sticky="nsew")
+        # Alias conveniente: todos los widgets se crean dentro de _scroll
+        _s = self._scroll
+
+        # ── Logo / Título ──
+        logo_frame = ctk.CTkFrame(_s, fg_color="transparent")
+        logo_frame.pack(fill="x", padx=15, pady=(14, 4))
 
         title_label = ctk.CTkLabel(
             logo_frame,
@@ -132,12 +163,12 @@ class MainApp(ctk.CTk):
         subtitle_label.pack(anchor="w")
 
         # ── Separador ──
-        sep = ctk.CTkFrame(self._sidebar, height=2, fg_color="#2a2a4a")
-        sep.pack(fill="x", padx=15, pady=10)
+        sep = ctk.CTkFrame(_s, height=2, fg_color="#2a2a4a")
+        sep.pack(fill="x", padx=15, pady=6)
 
         # ── Selector de Ejercicio ──
         exercise_label = ctk.CTkLabel(
-            self._sidebar,
+            _s,
             text="EJERCICIO",
             font=ctk.CTkFont(size=10, weight="bold"),
             text_color="#666666",
@@ -149,24 +180,24 @@ class MainApp(ctk.CTk):
             value=exercises[0] if exercises else ""
         )
         self._exercise_dropdown = ctk.CTkOptionMenu(
-            self._sidebar,
+            _s,
             values=exercises if exercises else ["Sin ejercicios"],
             variable=self._exercise_var,
             command=self._on_exercise_change,
-            width=SIDEBAR_WIDTH - 40,
-            height=36,
+            width=SIDEBAR_WIDTH - 55,
+            height=32,
             fg_color="#16213e",
             button_color="#0f3460",
             button_hover_color="#1a5276",
             dropdown_fg_color="#16213e",
             dropdown_hover_color="#0f3460",
-            font=ctk.CTkFont(size=13),
+            font=ctk.CTkFont(size=12),
         )
-        self._exercise_dropdown.pack(padx=20, pady=(5, 15))
+        self._exercise_dropdown.pack(padx=20, pady=(4, 8))
 
         # ── Selector de Cámara ──
         cam_label = ctk.CTkLabel(
-            self._sidebar,
+            _s,
             text="CÁMARA",
             font=ctk.CTkFont(size=10, weight="bold"),
             text_color="#666666",
@@ -183,72 +214,72 @@ class MainApp(ctk.CTk):
 
         self._camera_var = ctk.StringVar(value=default_cam)
         self._camera_dropdown = ctk.CTkOptionMenu(
-            self._sidebar,
+            _s,
             values=cam_names,
             variable=self._camera_var,
             command=self._on_camera_change,
-            width=SIDEBAR_WIDTH - 40,
-            height=36,
+            width=SIDEBAR_WIDTH - 55,
+            height=32,
             fg_color="#16213e",
             button_color="#0f3460",
             button_hover_color="#1a5276",
             dropdown_fg_color="#16213e",
             dropdown_hover_color="#0f3460",
-            font=ctk.CTkFont(size=13),
+            font=ctk.CTkFont(size=12),
         )
-        self._camera_dropdown.pack(padx=20, pady=(5, 15))
+        self._camera_dropdown.pack(padx=20, pady=(4, 8))
 
         # Aplicar índice inicial según la selección
         self._apply_camera_selection(default_cam)
 
         # ── Botones de Control ──
-        btn_frame = ctk.CTkFrame(self._sidebar, fg_color="transparent")
+        btn_frame = ctk.CTkFrame(_s, fg_color="transparent")
         btn_frame.pack(fill="x", padx=20)
 
         self._start_btn = ctk.CTkButton(
             btn_frame,
             text="▶  Iniciar",
             command=self._on_start,
-            height=42,
+            height=36,
             fg_color="#0e6c3a",
             hover_color="#12944f",
-            font=ctk.CTkFont(size=14, weight="bold"),
+            font=ctk.CTkFont(size=13, weight="bold"),
             corner_radius=8,
         )
-        self._start_btn.pack(fill="x", pady=(0, 8))
+        self._start_btn.pack(fill="x", pady=(0, 6))
 
         self._stop_btn = ctk.CTkButton(
             btn_frame,
             text="■  Detener",
             command=self._on_stop,
-            height=42,
+            height=36,
             fg_color="#8b0000",
             hover_color="#b22222",
-            font=ctk.CTkFont(size=14, weight="bold"),
+            font=ctk.CTkFont(size=13, weight="bold"),
             corner_radius=8,
             state="disabled",
         )
-        self._stop_btn.pack(fill="x", pady=(0, 8))
+        self._stop_btn.pack(fill="x", pady=(0, 6))
 
         self._reset_btn = ctk.CTkButton(
             btn_frame,
             text="↺  Reiniciar",
             command=self._on_reset,
-            height=36,
+            height=30,
             fg_color="#333355",
             hover_color="#444477",
-            font=ctk.CTkFont(size=12),
+            font=ctk.CTkFont(size=11),
             corner_radius=8,
         )
         self._reset_btn.pack(fill="x")
 
         # ── Separador ──
-        sep2 = ctk.CTkFrame(self._sidebar, height=2, fg_color="#2a2a4a")
-        sep2.pack(fill="x", padx=15, pady=15)
+        sep2 = ctk.CTkFrame(_s, height=2, fg_color="#2a2a4a")
+        sep2.pack(fill="x", padx=15, pady=8)
 
         # ── Métricas ──
         metrics_label = ctk.CTkLabel(
-            self._sidebar,
+            _s,
             text="MÉTRICAS",
             font=ctk.CTkFont(size=10, weight="bold"),
             text_color="#666666",
@@ -259,26 +290,26 @@ class MainApp(ctk.CTk):
         self._rep_frame = self._create_metric_card(
             "Repeticiones", "0", "#00d4ff"
         )
-        self._rep_frame.pack(fill="x", padx=20, pady=(8, 5))
+        self._rep_frame.pack(fill="x", padx=20, pady=(6, 3))
 
         # Ángulo actual
         self._angle_frame = self._create_metric_card(
             "Ángulo", "-- °", "#ffd700"
         )
-        self._angle_frame.pack(fill="x", padx=20, pady=5)
+        self._angle_frame.pack(fill="x", padx=20, pady=3)
 
         # Estado
         self._state_frame = self._create_metric_card(
             "Estado", "Inactivo", "#00ff88"
         )
-        self._state_frame.pack(fill="x", padx=20, pady=5)
+        self._state_frame.pack(fill="x", padx=20, pady=3)
 
         # ── Indicador de Forma ──
-        sep3 = ctk.CTkFrame(self._sidebar, height=2, fg_color="#2a2a4a")
-        sep3.pack(fill="x", padx=15, pady=15)
+        sep3 = ctk.CTkFrame(_s, height=2, fg_color="#2a2a4a")
+        sep3.pack(fill="x", padx=15, pady=8)
 
         form_header = ctk.CTkLabel(
-            self._sidebar,
+            _s,
             text="FORMA",
             font=ctk.CTkFont(size=10, weight="bold"),
             text_color="#666666",
@@ -286,39 +317,165 @@ class MainApp(ctk.CTk):
         form_header.pack(anchor="w", padx=20)
 
         self._form_indicator = ctk.CTkLabel(
-            self._sidebar,
+            _s,
             text="● CORRECTA",
-            font=ctk.CTkFont(size=16, weight="bold"),
+            font=ctk.CTkFont(size=14, weight="bold"),
             text_color="#00ff88",
         )
-        self._form_indicator.pack(anchor="w", padx=20, pady=(5, 10))
+        self._form_indicator.pack(anchor="w", padx=20, pady=(4, 6))
 
         # ── Feedback ──
         self._feedback_label = ctk.CTkLabel(
-            self._sidebar,
+            _s,
             text="",
-            font=ctk.CTkFont(size=12),
+            font=ctk.CTkFont(size=11),
             text_color="#aaaaaa",
-            wraplength=SIDEBAR_WIDTH - 40,
+            wraplength=SIDEBAR_WIDTH - 55,
         )
-        self._feedback_label.pack(anchor="w", padx=20, pady=(0, 10))
+        self._feedback_label.pack(anchor="w", padx=20, pady=(0, 6))
 
         # ── Audio toggle ──
-        sep4 = ctk.CTkFrame(self._sidebar, height=2, fg_color="#2a2a4a")
-        sep4.pack(fill="x", padx=15, pady=(5, 10))
+        sep4 = ctk.CTkFrame(_s, height=2, fg_color="#2a2a4a")
+        sep4.pack(fill="x", padx=15, pady=(4, 6))
 
         self._audio_var = ctk.BooleanVar(value=True)
         self._audio_switch = ctk.CTkSwitch(
-            self._sidebar,
+            _s,
             text="Audio Feedback",
             variable=self._audio_var,
             command=self._on_audio_toggle,
             onvalue=True,
             offvalue=False,
-            font=ctk.CTkFont(size=12),
+            font=ctk.CTkFont(size=11),
             progress_color="#00d4ff",
         )
-        self._audio_switch.pack(anchor="w", padx=20, pady=(0, 10))
+        self._audio_switch.pack(anchor="w", padx=20, pady=(0, 6))
+
+        # ── Sección: Análisis de Video Pregrabado ──
+        sep5 = ctk.CTkFrame(_s, height=2, fg_color="#2a2a4a")
+        sep5.pack(fill="x", padx=15, pady=(4, 6))
+
+        video_section_label = ctk.CTkLabel(
+            _s,
+            text="ANÁLISIS DE VIDEO",
+            font=ctk.CTkFont(size=10, weight="bold"),
+            text_color="#666666",
+        )
+        video_section_label.pack(anchor="w", padx=20)
+
+        # Botón cargar video
+        self._load_video_btn = ctk.CTkButton(
+            _s,
+            text="📂  Cargar Video",
+            command=self._on_load_video,
+            height=34,
+            fg_color="#1a3a5c",
+            hover_color="#254f7a",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            corner_radius=8,
+        )
+        self._load_video_btn.pack(fill="x", padx=20, pady=(5, 3))
+
+        # Nombre del archivo cargado
+        self._video_name_label = ctk.CTkLabel(
+            _s,
+            text="Sin video cargado",
+            font=ctk.CTkFont(size=10),
+            text_color="#555555",
+            wraplength=SIDEBAR_WIDTH - 55,
+            anchor="w",
+        )
+        self._video_name_label.pack(anchor="w", padx=20, pady=(0, 3))
+
+        # Barra de progreso / Seek slider del video
+        self._video_progress = ctk.CTkSlider(
+            _s,
+            from_=0,
+            to=1,
+            width=SIDEBAR_WIDTH - 55,
+            height=14,
+            progress_color="#00d4ff",
+            fg_color="#16213e",
+            button_color="#00aacc",
+            button_hover_color="#00d4ff",
+            corner_radius=4,
+            button_corner_radius=6,
+            command=self._on_seek_drag,
+        )
+        self._video_progress.set(0)
+        self._video_progress.pack(padx=20, pady=(0, 3))
+        # Detectar inicio y fin del arrastre para pausar/reanudar el loop
+        self._video_progress.bind("<ButtonPress-1>",   self._on_seek_start)
+        self._video_progress.bind("<ButtonRelease-1>", self._on_seek_release)
+
+        # Label de tiempo
+        self._video_time_label = ctk.CTkLabel(
+            _s,
+            text="00:00 / 00:00",
+            font=ctk.CTkFont(family="Consolas", size=10),
+            text_color="#555555",
+        )
+        self._video_time_label.pack(anchor="w", padx=20, pady=(0, 3))
+
+        # Fila de controles de video
+        video_ctrl_frame = ctk.CTkFrame(_s, fg_color="transparent")
+        video_ctrl_frame.pack(fill="x", padx=20, pady=(0, 3))
+
+        self._play_pause_btn = ctk.CTkButton(
+            video_ctrl_frame,
+            text="⏸ Pausar",
+            command=self._on_video_pause_resume,
+            height=30,
+            fg_color="#2a2a4a",
+            hover_color="#3a3a6a",
+            font=ctk.CTkFont(size=11),
+            corner_radius=6,
+            state="disabled",
+        )
+        self._play_pause_btn.pack(side="left", expand=True, fill="x", padx=(0, 4))
+
+        self._stop_video_btn = ctk.CTkButton(
+            video_ctrl_frame,
+            text="⏹",
+            command=self._on_stop_video,
+            height=30,
+            width=34,
+            fg_color="#4a1a1a",
+            hover_color="#6a2a2a",
+            font=ctk.CTkFont(size=11),
+            corner_radius=6,
+            state="disabled",
+        )
+        self._stop_video_btn.pack(side="right")
+
+        # Velocidad de reproducción
+        speed_frame = ctk.CTkFrame(_s, fg_color="transparent")
+        speed_frame.pack(fill="x", padx=20, pady=(0, 3))
+
+        ctk.CTkLabel(
+            speed_frame,
+            text="Velocidad:",
+            font=ctk.CTkFont(size=11),
+            text_color="#888888",
+        ).pack(side="left", padx=(0, 6))
+
+        self._speed_var = ctk.StringVar(value="1x")
+        speed_menu = ctk.CTkOptionMenu(
+            speed_frame,
+            values=list(SPEED_OPTIONS.keys()),
+            variable=self._speed_var,
+            command=self._on_speed_change,
+            width=80,
+            height=26,
+            fg_color="#16213e",
+            button_color="#0f3460",
+            button_hover_color="#1a5276",
+            dropdown_fg_color="#16213e",
+            font=ctk.CTkFont(size=11),
+        )
+        speed_menu.pack(side="left")
+
+
 
     def _build_video_area(self) -> None:
         """Construye el área central del feed de video."""
@@ -357,10 +514,10 @@ class MainApp(ctk.CTk):
             Frame con la tarjeta de métrica.
         """
         card = ctk.CTkFrame(
-            self._sidebar,
+            self._scroll,
             fg_color="#16213e",
             corner_radius=8,
-            height=65,
+            height=52,
         )
         card.pack_propagate(False)
 
@@ -370,15 +527,15 @@ class MainApp(ctk.CTk):
             font=ctk.CTkFont(size=9, weight="bold"),
             text_color="#888888",
         )
-        title_lbl.pack(anchor="w", padx=12, pady=(8, 0))
+        title_lbl.pack(anchor="w", padx=12, pady=(6, 0))
 
         value_lbl = ctk.CTkLabel(
             card,
             text=value,
-            font=ctk.CTkFont(family="Consolas", size=22, weight="bold"),
+            font=ctk.CTkFont(family="Consolas", size=19, weight="bold"),
             text_color=value_color,
         )
-        value_lbl.pack(anchor="w", padx=12, pady=(0, 8))
+        value_lbl.pack(anchor="w", padx=12, pady=(0, 6))
 
         # Guardar referencia al label de valor para actualizar después
         card._value_label = value_lbl  # type: ignore[attr-defined]
@@ -607,6 +764,265 @@ class MainApp(ctk.CTk):
         self.tracker.audio.enabled = self._audio_var.get()
 
     # ──────────────────────────────────────────────
+    #  Eventos de Video Pregrabado
+    # ──────────────────────────────────────────────
+
+    def _on_load_video(self) -> None:
+        """Abre el diálogo para seleccionar un archivo de video."""
+        # Detener cualquier fuente activa antes de cargar
+        if self._is_running:
+            self._on_stop()
+        self._on_stop_video()
+
+        path = filedialog.askopenfilename(
+            title="Seleccionar video para analizar",
+            filetypes=[
+                ("Archivos de video", "*.mp4 *.avi *.mov *.mkv *.wmv *.flv"),
+                ("Todos los archivos", "*.*"),
+            ],
+        )
+        if not path:
+            return
+
+        # Validar que OpenCV pueda abrir el archivo
+        test_cap = cv2.VideoCapture(path)
+        if not test_cap.isOpened():
+            test_cap.release()
+            self._show_error("No se pudo abrir el archivo de video.\nVerifica que el formato sea compatible.")
+            return
+
+        self._video_total_frames = int(test_cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        self._video_fps = test_cap.get(cv2.CAP_PROP_FPS) or 30.0
+        test_cap.release()
+
+        self._video_path = path
+        self._video_mode = True
+        self._video_paused = False
+        self._video_current_frame = 0
+
+        # Actualizar label con nombre de archivo
+        filename = os.path.basename(path)
+        short_name = filename if len(filename) <= 28 else filename[:25] + "..."
+        self._video_name_label.configure(text=short_name, text_color="#aaaaaa")
+
+        # Habilitar controles de video
+        self._play_pause_btn.configure(state="normal", text="⏸ Pausar")
+        self._stop_video_btn.configure(state="normal")
+
+        # Reiniciar contadores del ejercicio
+        self.tracker.reset_exercise()
+        self._update_metrics_display(None)
+
+        logger.info("Video cargado: %s (%.0f frames @ %.1f FPS)", path, self._video_total_frames, self._video_fps)
+
+        # Iniciar reproducción automáticamente
+        self._start_video_playback()
+
+    def _start_video_playback(self) -> None:
+        """Inicia el loop de reproducción del video pregrabado."""
+        if self._video_path is None:
+            return
+
+        self._cap = cv2.VideoCapture(self._video_path)
+        if not self._cap.isOpened():
+            self._show_error("Error al abrir el video para reproducción.")
+            return
+
+
+
+        self._is_running = True
+        self._video_paused = False
+        self._update_video_frame()
+
+    def _on_video_pause_resume(self) -> None:
+        """Alterna entre pausa y reproducción del video."""
+        if not self._video_mode:
+            return
+        self._video_paused = not self._video_paused
+        if self._video_paused:
+            self._play_pause_btn.configure(text="▶ Reanudar")
+            logger.info("Video pausado en frame %d", self._video_current_frame)
+        else:
+            self._play_pause_btn.configure(text="⏸ Pausar")
+            logger.info("Video reanudado desde frame %d", self._video_current_frame)
+            self._update_video_frame()
+
+    def _on_stop_video(self) -> None:
+        """Detiene y descarga el video pregrabado."""
+        self._is_running = False
+        self._video_mode = False
+        self._video_paused = False
+
+        if self._after_id is not None:
+            self.after_cancel(self._after_id)
+            self._after_id = None
+
+        if self._cap is not None:
+            self._cap.release()
+            self._cap = None
+
+        # Resetear controles
+        self._play_pause_btn.configure(state="disabled", text="⏸ Pausar")
+        self._stop_video_btn.configure(state="disabled")
+        self._video_progress.set(0)
+        self._video_time_label.configure(text="00:00 / 00:00")
+        self._video_name_label.configure(text="Sin video cargado", text_color="#555555")
+        self._video_path = None
+        self._update_placeholder_image()
+        logger.info("Video detenido y descargado")
+
+    def _on_speed_change(self, value: str) -> None:
+        """Actualiza la velocidad de reproducción."""
+        self._playback_speed = SPEED_OPTIONS.get(value, 1.0)
+        logger.info("Velocidad de reproducción: %s (%.2fx)", value, self._playback_speed)
+
+    def _on_seek_drag(self, value: float) -> None:
+        """Llamado mientras el usuario arrastra el slider: actualiza solo el tiempo."""
+        if not self._video_mode or self._video_total_frames <= 0:
+            return
+        # Calcular tiempo correspondiente a la posición del slider
+        target_frame = int(value * self._video_total_frames)
+        elapsed_s = target_frame / max(self._video_fps, 1)
+        total_s = self._video_total_frames / max(self._video_fps, 1)
+        elapsed_str = f"{int(elapsed_s // 60):02d}:{int(elapsed_s % 60):02d}"
+        total_str = f"{int(total_s // 60):02d}:{int(total_s % 60):02d}"
+        self._video_time_label.configure(
+            text=f"{elapsed_str} / {total_str}",
+            text_color="#ffcc00",  # color dorado mientras hace seek
+        )
+
+    def _on_seek_start(self, event=None) -> None:
+        """El usuario empieza a arrastrar: congelar actualizaciones del loop."""
+        self._user_seeking = True
+
+    def _on_seek_release(self, event=None) -> None:
+        """El usuario soltó el slider: saltar al frame correspondiente."""
+        if not self._video_mode or self._cap is None or self._video_total_frames <= 0:
+            self._user_seeking = False
+            return
+
+        value = self._video_progress.get()
+        target_frame = int(value * self._video_total_frames)
+        target_frame = max(0, min(target_frame, self._video_total_frames - 1))
+
+        # Saltar al frame deseado
+        self._cap.set(cv2.CAP_PROP_POS_FRAMES, target_frame)
+        self._video_current_frame = target_frame
+        logger.info("Seek a frame %d (%.1f%%)", target_frame, value * 100)
+
+        self._user_seeking = False
+
+        # Si estaba pausado, mostrar el frame en el que aterrizó
+        if self._video_paused:
+            ret, frame = self._cap.read()
+            if ret:
+                frame = cv2.flip(frame, 1)
+                try:
+                    frame, results_mp, exercise_result = self.tracker.process_frame(frame)
+                    color = exercise_result.color_bgr if exercise_result else None
+                    annotated = self.tracker.pose_detector.draw_landmarks(frame, results_mp, color=color)
+                    if exercise_result:
+                        pass # La información ya se muestra en el sidebar izquierdo
+                    self._display_frame(annotated)
+                    self._update_metrics_display(exercise_result)
+                except Exception as e:
+                    logger.error("Error previsualizando frame seek: %s", e)
+                    self._display_frame(frame)
+                # Retroceder 1 frame para que el loop siga desde aquí
+                self._cap.set(cv2.CAP_PROP_POS_FRAMES, target_frame)
+        else:
+            # Si no estaba pausado, reanudar reproducción desde la nueva posición
+            if self._is_running:
+                if self._after_id is not None:
+                    self.after_cancel(self._after_id)
+                    self._after_id = None
+                self._update_video_frame()
+
+    def _update_video_progress(self) -> None:
+        """Actualiza el slider de progreso y el label de tiempo."""
+        if self._video_total_frames <= 0 or self._user_seeking:
+            return  # No sobreescribir mientras el usuario arrastra
+        progress = self._video_current_frame / self._video_total_frames
+        self._video_progress.set(min(progress, 1.0))
+
+        # Calcular tiempos
+        elapsed_s = self._video_current_frame / self._video_fps
+        total_s = self._video_total_frames / self._video_fps
+        elapsed_str = f"{int(elapsed_s // 60):02d}:{int(elapsed_s % 60):02d}"
+        total_str = f"{int(total_s // 60):02d}:{int(total_s % 60):02d}"
+        self._video_time_label.configure(
+            text=f"{elapsed_str} / {total_str}",
+            text_color="#aaaaaa",
+        )
+
+    def _update_video_frame(self) -> None:
+        """Loop de procesamiento de video pregrabado frame a frame."""
+        if not self._is_running or not self._video_mode:
+            return
+
+        # Si está pausado, no avanzar; solo reprogramar para detectar reanudación
+        if self._video_paused:
+            return
+
+        if self._cap is None or not self._cap.isOpened():
+            self._on_video_finished()
+            return
+
+        ret, frame = self._cap.read()
+        if not ret:
+            # Fin del video
+            self._on_video_finished()
+            return
+
+        self._video_current_frame = int(self._cap.get(cv2.CAP_PROP_POS_FRAMES))
+
+        # Espejo horizontal para consistencia con modo cámara
+        frame = cv2.flip(frame, 1)
+
+        try:
+            # Procesar con el tracker
+            frame, results_mp, exercise_result = self.tracker.process_frame(frame)
+
+            # Dibujar esqueleto
+            color = exercise_result.color_bgr if exercise_result else None
+            annotated_frame = self.tracker.pose_detector.draw_landmarks(frame, results_mp, color=color)
+
+            # La info del ejercicio ahora solo se muestra en el sidebar
+
+            # Guardar frame anotado si está configurado
+            # Mostrar en GUI
+            self._display_frame(annotated_frame)
+            self._update_metrics_display(exercise_result)
+
+        except Exception as e:
+            logger.error("Error procesando frame %d: %s", self._video_current_frame, e)
+            # Mostrar el frame sin anotar para no detener la reproducción
+            self._display_frame(frame)
+
+        self._update_video_progress()
+
+        # Calcular intervalo según velocidad (ms entre frames)
+        interval_ms = max(1, int((1000.0 / self._video_fps) / self._playback_speed))
+        self._after_id = self.after(interval_ms, self._update_video_frame)
+
+    def _on_video_finished(self) -> None:
+        """Maneja el fin natural del video pregrabado."""
+        logger.info("Video finalizado. Total frames procesados: %d", self._video_current_frame)
+
+        # Cerrar el writer si estaba guardando
+        if self._cap is not None:
+            self._cap.release()
+            self._cap = None
+
+        self._is_running = False
+        self._video_paused = False
+        self._play_pause_btn.configure(state="disabled", text="✅ Finalizado")
+        self._video_progress.set(1.0)
+
+        # Notificar al usuario
+        self._show_info("Análisis de video completado.")
+
+    # ──────────────────────────────────────────────
     #  Loop de Video
     # ──────────────────────────────────────────────
 
@@ -637,10 +1053,6 @@ class MainApp(ctk.CTk):
                     )
 
                     # 3. Dibujar información del ejercicio (Uso de DrawingUtils)
-                    if exercise_result:
-                        annotated_frame = DrawingUtils.draw_exercise_info(
-                            annotated_frame, exercise_result, _CONFIG
-                        )
 
                     # 4. Convertir BGR → RGB y mostrar
                     self._display_frame(annotated_frame)
@@ -762,36 +1174,46 @@ class MainApp(ctk.CTk):
     # ──────────────────────────────────────────────
 
     def _show_error(self, message: str) -> None:
-        """Muestra un diálogo de error.
+        """Muestra un diálogo de error."""
+        self._show_dialog("⚠️ Error", message, "#ff4444")
+
+    def _show_info(self, message: str) -> None:
+        """Muestra un diálogo informativo."""
+        self._show_dialog("✅ Listo", message, "#00ff88")
+
+    def _show_dialog(self, title: str, message: str, title_color: str) -> None:
+        """Muestra un diálogo modal genérico.
 
         Args:
-            message: Mensaje de error a mostrar.
+            title: Título del diálogo.
+            message: Mensaje a mostrar.
+            title_color: Color del texto del título.
         """
         dialog = ctk.CTkToplevel(self)
-        dialog.title("Error")
-        dialog.geometry("400x150")
+        dialog.title(title.replace("⚠️ ", "").replace("✅ ", ""))
+        dialog.geometry("420x170")
         dialog.resizable(False, False)
         dialog.transient(self)
         dialog.grab_set()
 
         # Centrar en pantalla
         dialog.update_idletasks()
-        x = (dialog.winfo_screenwidth() - 400) // 2
-        y = (dialog.winfo_screenheight() - 150) // 2
+        x = (dialog.winfo_screenwidth() - 420) // 2
+        y = (dialog.winfo_screenheight() - 170) // 2
         dialog.geometry(f"+{x}+{y}")
 
         ctk.CTkLabel(
             dialog,
-            text="⚠️ Error",
+            text=title,
             font=ctk.CTkFont(size=16, weight="bold"),
-            text_color="#ff4444",
+            text_color=title_color,
         ).pack(pady=(15, 5))
 
         ctk.CTkLabel(
             dialog,
             text=message,
             font=ctk.CTkFont(size=12),
-            wraplength=360,
+            wraplength=380,
         ).pack(pady=5)
 
         ctk.CTkButton(
@@ -804,6 +1226,7 @@ class MainApp(ctk.CTk):
     def _on_close(self) -> None:
         """Maneja el cierre de la ventana."""
         self._on_stop()
+        self._on_stop_video()
         self.tracker.audio.stop()
         self.tracker.pose_detector.release()
         self.destroy()

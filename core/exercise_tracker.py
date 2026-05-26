@@ -137,21 +137,17 @@ class ExerciseTracker:
             
             self._last_result = exercise_result
 
-            # 4. Producir feedback de audio
+            # 4. Producir feedback de audio (Postura incorrecta o posicionamiento)
             if exercise_result and exercise_result.feedback_message:
                 state_lower = exercise_result.state.lower()
                 is_positioning_msg = (
-                    "no detectado" in state_lower
+                    "esperando" in state_lower
                     or "no visible" in state_lower
-                    or "esperando" in state_lower
                     or "piernas" in state_lower
                 )
-                # Hablar si la postura está mal O si se necesita reposicionarse
                 if not exercise_result.form_ok or is_positioning_msg:
+                    logger.debug("Solicitando audio TTS: %s", exercise_result.feedback_message)
                     self.audio.speak(exercise_result.feedback_message)
-                # Anunciar el número de reps al completar una
-                elif self._last_rep_count is not None and exercise_result.rep_count > self._last_rep_count:
-                    self.audio.speak(str(exercise_result.rep_count))
 
             self._last_rep_count = exercise_result.rep_count if exercise_result else 0
 

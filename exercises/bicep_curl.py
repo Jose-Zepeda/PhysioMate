@@ -21,7 +21,15 @@ from exercises.base import ExerciseBase, ExerciseResult, register_exercise
 # IDs de landmarks de MediaPipe Pose
 _mp_pose = mp.solutions.pose.PoseLandmark
 
-# ... (sin cambios en las constantes de landmarks) ...
+# ─── Landmark IDs ───
+_LEFT_SHOULDER  = _mp_pose.LEFT_SHOULDER
+_RIGHT_SHOULDER = _mp_pose.RIGHT_SHOULDER
+_LEFT_ELBOW     = _mp_pose.LEFT_ELBOW
+_RIGHT_ELBOW    = _mp_pose.RIGHT_ELBOW
+_LEFT_WRIST     = _mp_pose.LEFT_WRIST
+_RIGHT_WRIST    = _mp_pose.RIGHT_WRIST
+_LEFT_HIP       = _mp_pose.LEFT_HIP
+_RIGHT_HIP      = _mp_pose.RIGHT_HIP
 
 # ─── Colores BGR desde Config ───
 _UI = UIConfig()

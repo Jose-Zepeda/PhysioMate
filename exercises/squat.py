@@ -14,7 +14,15 @@ from exercises.base import ExerciseBase, ExerciseResult, register_exercise
 
 _mp_pose = mp.solutions.pose.PoseLandmark
 
-# ... (sin cambios en las constantes de landmarks) ...
+# ─── Landmark IDs ───
+_LEFT_SHOULDER  = _mp_pose.LEFT_SHOULDER
+_RIGHT_SHOULDER = _mp_pose.RIGHT_SHOULDER
+_LEFT_HIP       = _mp_pose.LEFT_HIP
+_RIGHT_HIP      = _mp_pose.RIGHT_HIP
+_LEFT_KNEE      = _mp_pose.LEFT_KNEE
+_RIGHT_KNEE     = _mp_pose.RIGHT_KNEE
+_LEFT_ANKLE     = _mp_pose.LEFT_ANKLE
+_RIGHT_ANKLE    = _mp_pose.RIGHT_ANKLE
 
 _UI = UIConfig()
 COLOR_OK = _UI.COLOR_OK

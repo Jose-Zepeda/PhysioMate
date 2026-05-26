@@ -34,6 +34,7 @@ class HighKneesExercise(ExerciseBase):
         self._rep_count: int = 0
         self._steps_count: int = 0
         self._state: str = "Esperando..."
+        self._last_leg_up: str = ""
         self._form_ok: bool = True
 
     @property
@@ -48,6 +49,7 @@ class HighKneesExercise(ExerciseBase):
         self._rep_count = 0
         self._steps_count = 0
         self._state = "Esperando..."
+        self._last_leg_up = ""
         self._form_ok = True
 
     def evaluate(self, landmarks: Any, frame_shape: Tuple[int, int, int]) -> ExerciseResult:
@@ -90,15 +92,19 @@ class HighKneesExercise(ExerciseBase):
 
         new_state = self._state
 
-        if angle > self.ANGLE_DOWN_THRESHOLD:
-            new_state = "Abajo"
-            if not feedback: feedback = "Sube la rodilla!"
-        elif angle < self.ANGLE_UP_THRESHOLD:
+        if angle < self.ANGLE_UP_THRESHOLD:
             new_state = "Arriba"
-            if self._state == "Abajo" and self._form_ok:
+            # Si sube una pierna diferente a la anterior, cuenta como paso
+            if active_side != self._last_leg_up:
                 self._steps_count += 1
                 self._rep_count = self._steps_count // 2
+                self._last_leg_up = active_side
             if not feedback: feedback = "¡Bien! Cambia de pierna"
+        elif angle > self.ANGLE_DOWN_THRESHOLD:
+            new_state = "Abajo"
+            # Si ambas piernas bajan (pausa), permitimos reiniciar con cualquiera
+            self._last_leg_up = ""
+            if not feedback: feedback = "Sube la rodilla!"
         
         self._state = new_state
 
